@@ -417,7 +417,10 @@ export default function TreasurerDashboardPage() {
 
       {/* ── Create Payment Event Modal ───────────────────────────────────── */}
       <Modal isOpen={showEventModal} onClose={() => { setShowEventModal(false); resetEventForm(); }} title="New Payment Event">
-        <form onSubmit={handleEvt((data) => createEventMutation.mutate(data))} className="space-y-4">
+        <form onSubmit={handleEvt((data) => createEventMutation.mutate({
+          ...data,
+          dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : data.dueDate,
+        }))} className="space-y-4">
           <div className="p-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg text-primary-700 dark:text-primary-300 text-xs">
             Creates a pending payment for every active member. Once the due date passes, all unpaid members get arrears and the overdue count increases.
           </div>
