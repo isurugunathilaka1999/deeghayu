@@ -108,7 +108,76 @@ export default function MemberProfilePage() {
   };
 
   if (isLoading) return <PageLoader />;
-  if (!data) return <div>Member not found</div>;
+
+  // Admin-only user (e.g. SUPER_ADMIN) with no member record — show account settings
+  if (!memberId) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="sm" icon={<ArrowLeft size={16} />} onClick={() => navigate(-1)}>Back</Button>
+          <h1 className="page-title">Account Settings</h1>
+        </div>
+
+        <div className="max-w-lg space-y-4">
+          {/* Account info */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+              <Shield size={16} /> Account
+            </h3>
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center gap-3">
+                <Mail size={14} className="text-slate-400" />
+                <span className="text-slate-900 dark:text-slate-100">{user?.email}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Shield size={14} className="text-slate-400" />
+                <span className="text-slate-900 dark:text-slate-100">{formatRole(user?.role || '')}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Appearance */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-4">Appearance</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Theme</p>
+                <p className="text-xs text-slate-400 mt-0.5">Currently {theme} mode</p>
+              </div>
+              <Button variant="secondary" size="sm" onClick={toggleTheme}
+                icon={theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}>
+                Switch to {theme === 'light' ? 'Dark' : 'Light'}
+              </Button>
+            </div>
+          </div>
+
+          {/* Notifications */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+              <Bell size={16} /> Notification Preferences
+            </h3>
+            <div className="space-y-4">
+              {[
+                { label: 'Payment reminders', desc: 'Get notified when a payment is due' },
+                { label: 'Event reminders', desc: 'Get notified about upcoming events' },
+                { label: 'Announcements', desc: 'Receive community announcements' },
+              ].map(({ label, desc }) => (
+                <div key={label} className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{label}</p>
+                    <p className="text-xs text-slate-400">{desc}</p>
+                  </div>
+                  <input type="checkbox" defaultChecked className="w-4 h-4 accent-primary-600" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) return <div className="text-center py-12 text-slate-500">Member not found</div>;
 
   const member = data;
 
