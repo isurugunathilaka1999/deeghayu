@@ -289,7 +289,18 @@ export class PaymentService {
     });
   }
 
+  async syncOverdue() {
+    await pool.query(`
+      UPDATE payments
+      SET status = 'OVERDUE', "updatedAt" = NOW()
+      WHERE status IN ('PENDING', 'PARTIAL')
+        AND "dueDate" IS NOT NULL
+        AND "dueDate" < NOW()
+    `);
+  }
+
   async getSummary(year: number, month?: number) {
+    await this.syncOverdue();
     const conditions = ['year = $1'];
     const params: any[] = [year];
     let i = 2;
@@ -336,6 +347,7 @@ export class PaymentService {
   }
 
   async getOverdue() {
+    await this.syncOverdue();
     const result = await pool.query(
       `SELECT p.*, m."fullName", m."membershipId", u.email
        FROM payments p
