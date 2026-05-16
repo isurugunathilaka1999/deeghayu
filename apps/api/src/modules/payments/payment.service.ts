@@ -145,12 +145,13 @@ export class PaymentService {
       status = 'OVERDUE';
     }
 
+    const paymentId = uuidv4();
     const result = await pool.query(
       `INSERT INTO payments (id, "memberId", type, "customType", status, amount, "paidAmount", "dueDate", "paidAt",
                             month, year, description, "bankAccountId", "recordedBy", "createdAt", "updatedAt")
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW()) RETURNING *`,
       [
-        uuidv4(),
+        paymentId,
         data.memberId,
         data.type,
         customType,
@@ -166,6 +167,15 @@ export class PaymentService {
         data.recordedBy,
       ]
     );
+
+    if (paidAmount > 0) {
+      await pool.query(
+        `INSERT INTO payment_transactions (id, "paymentId", "memberId", amount, "bankAccountId", "recordedBy", "createdAt")
+         VALUES ($1,$2,$3,$4,$5,$6,NOW())`,
+        [uuidv4(), paymentId, data.memberId, paidAmount, data.bankAccountId || null, data.recordedBy]
+      );
+    }
+
     return result.rows[0];
   }
 
@@ -176,6 +186,7 @@ export class PaymentService {
       paidAmount: number;
       bankAccountId: string;
       description: string;
+      recordedBy: string;
     }>
   ) {
     const existing = await pool.query('SELECT * FROM payments WHERE id = $1', [id]);
@@ -212,6 +223,16 @@ export class PaymentService {
        WHERE id = $5 RETURNING *`,
       [status, updatedPaidAmount, bankAccountId, data.description || null, id, status]
     );
+
+    if (additional > 0) {
+      const recordedBy = data.recordedBy || payment.recordedBy;
+      await pool.query(
+        `INSERT INTO payment_transactions (id, "paymentId", "memberId", amount, "bankAccountId", "recordedBy", "createdAt")
+         VALUES ($1,$2,$3,$4,$5,$6,NOW())`,
+        [uuidv4(), id, payment.memberId, additional, bankAccountId, recordedBy]
+      );
+    }
+
     return result.rows[0];
   }
 

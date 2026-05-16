@@ -17,3 +17,8 @@ export const update = async (req: Request, res: Response) => {
   const result = await service.update(req.params.id, req.body);
   res.json({ success: true, data: result });
 };
+
+export const getTransactions = async (req: Request, res: Response) => {
+  const result = await service.getTransactions(req.params.id);
+  res.json({ success: true, data: result });
+};

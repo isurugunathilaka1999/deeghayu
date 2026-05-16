@@ -50,6 +50,45 @@ export class BankAccountService {
     return result.rows[0];
   }
 
+  async getTransactions(accountId: string) {
+    const existing = await pool.query('SELECT id FROM bank_accounts WHERE id = $1', [accountId]);
+    if (!existing.rows[0]) throw new NotFoundError('Bank account not found');
+
+    const result = await pool.query(`
+      SELECT
+        pt.id,
+        'IN'                   AS direction,
+        pt.amount::numeric     AS amount,
+        pt."createdAt",
+        m."fullName"           AS description,
+        p.type                 AS "subType",
+        p."customType",
+        NULL::text             AS category
+      FROM payment_transactions pt
+      JOIN payments p ON p.id = pt."paymentId"
+      JOIN members m ON m.id = pt."memberId"
+      WHERE pt."bankAccountId" = $1
+
+      UNION ALL
+
+      SELECT
+        e.id,
+        'OUT'              AS direction,
+        e.amount::numeric  AS amount,
+        e."createdAt",
+        e.title            AS description,
+        NULL::text         AS "subType",
+        NULL::text         AS "customType",
+        e.category
+      FROM expenses e
+      WHERE e."bankAccountId" = $1
+
+      ORDER BY "createdAt" DESC
+    `, [accountId]);
+
+    return result.rows.map((r) => ({ ...r, amount: Number(r.amount) }));
+  }
+
   async update(
     id: string,
     data: Partial<{

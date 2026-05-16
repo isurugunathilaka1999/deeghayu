@@ -10,6 +10,7 @@ router.use(authorizeMinRole(Role.TREASURER));
 
 router.get('/', controller.getAll);
 router.post('/', controller.create);
+router.get('/:id/transactions', controller.getTransactions);
 router.patch('/:id', controller.update);
 
 export default router;

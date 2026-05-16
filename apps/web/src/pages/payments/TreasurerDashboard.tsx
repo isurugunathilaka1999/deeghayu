@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { DollarSign, AlertTriangle, Plus, Send, CalendarClock, ChevronRight, Landmark, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+import { DollarSign, AlertTriangle, Plus, Send, CalendarClock, ChevronRight, Landmark, ArrowDownLeft, ArrowUpRight, List, X } from 'lucide-react';
 import { paymentsApi } from '../../api/payments.api';
 import { paymentEventsApi } from '../../api/paymentEvents.api';
 import { membersApi } from '../../api/members.api';
@@ -28,6 +28,7 @@ export default function TreasurerDashboardPage() {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [selectedOverdue, setSelectedOverdue] = useState<string[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [txAccountId, setTxAccountId] = useState<string | null>(null);
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: summary } = useQuery({
@@ -54,6 +55,13 @@ export default function TreasurerDashboardPage() {
   const { data: bankAccounts } = useQuery({
     queryKey: ['bank-accounts'],
     queryFn: () => bankAccountsApi.getAll().then((r) => r.data.data),
+  });
+
+  const { data: txData, isLoading: txLoading } = useQuery({
+    queryKey: ['bank-account-transactions', txAccountId],
+    queryFn: () => bankAccountsApi.getTransactions(txAccountId!).then((r) => r.data.data),
+    enabled: !!txAccountId,
+    staleTime: 0,
   });
 
   // ── Bank account mutation ─────────────────────────────────────────────────
@@ -219,7 +227,7 @@ export default function TreasurerDashboardPage() {
                       <p className="text-xs text-slate-400 mt-0.5">A/C {acct.accountNumber}</p>
                     )}
                   </div>
-                  <div className="flex items-center gap-6 text-sm">
+                  <div className="flex items-center gap-4 text-sm">
                     <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                       <ArrowDownLeft size={14} />
                       <span>{formatCurrency(acct.totalIn)}</span>
@@ -231,6 +239,9 @@ export default function TreasurerDashboardPage() {
                     <div className={`font-semibold text-base ${balancePositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                       {formatCurrency(acct.balance)}
                     </div>
+                    <Button size="sm" variant="ghost" icon={<List size={14} />} onClick={() => setTxAccountId(acct.id)}>
+                      Transactions
+                    </Button>
                   </div>
                 </div>
               );
@@ -238,6 +249,59 @@ export default function TreasurerDashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Bank Account Transactions Modal */}
+      {txAccountId && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 overflow-y-auto py-8 px-4">
+          <div className="bg-white dark:bg-surface-900 rounded-2xl shadow-2xl w-full max-w-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-surface-200 dark:border-surface-700">
+              <h2 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <List size={16} />
+                {(bankAccounts ?? []).find((a: any) => a.id === txAccountId)?.name} — Transactions
+              </h2>
+              <button onClick={() => setTxAccountId(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="overflow-y-auto max-h-[70vh]">
+              {txLoading ? (
+                <div className="flex justify-center py-10">
+                  <div className="animate-spin w-7 h-7 border-4 border-primary-600 border-t-transparent rounded-full" />
+                </div>
+              ) : (txData?.length ?? 0) === 0 ? (
+                <p className="px-6 py-8 text-sm text-slate-400 text-center">No transactions yet for this account.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700">
+                    <tr>
+                      {['Date & Time', 'Description', 'Category / Type', 'Amount'].map((h) => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-100 dark:divide-surface-700">
+                    {(txData ?? []).map((tx: any) => (
+                      <tr key={tx.id} className="hover:bg-surface-50 dark:hover:bg-surface-800 transition-colors">
+                        <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{formatDate(tx.createdAt, 'PP p')}</td>
+                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">{tx.description}</td>
+                        <td className="px-4 py-3 text-slate-500">
+                          {tx.category ?? (tx.customType || tx.subType?.replace(/_/g, ' '))}
+                        </td>
+                        <td className={`px-4 py-3 font-semibold whitespace-nowrap ${tx.direction === 'IN' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                          {tx.direction === 'IN' ? '+' : '−'}{formatCurrency(tx.amount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="px-5 py-4 border-t border-surface-200 dark:border-surface-700 flex justify-end">
+              <Button variant="secondary" onClick={() => setTxAccountId(null)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Active Payment Events */}
       {(activeEvents?.length || 0) > 0 && (

@@ -19,7 +19,7 @@ export const create = async (req: Request, res: Response) => {
 };
 
 export const update = async (req: Request, res: Response) => {
-  const payment = await paymentService.update(req.params.id, req.body);
+  const payment = await paymentService.update(req.params.id, { ...req.body, recordedBy: req.user!.id });
   res.json({ success: true, data: payment });
 };
 
