@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { DollarSign, AlertTriangle, Plus, Send, Users, User } from 'lucide-react';
+import { DollarSign, AlertTriangle, Plus, Send, CalendarClock, ChevronRight } from 'lucide-react';
 import { paymentsApi } from '../../api/payments.api';
+import { paymentEventsApi } from '../../api/paymentEvents.api';
 import { membersApi } from '../../api/members.api';
 import { Button } from '../../components/ui/Button';
 import { StatCard } from '../../components/ui/StatCard';
@@ -12,6 +13,7 @@ import { formatCurrency, formatDate } from '../../utils/formatters';
 import { toast } from 'sonner';
 import { useForm } from 'react-hook-form';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { PaymentEventDetail } from './PaymentEventDetail';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -19,9 +21,13 @@ export default function TreasurerDashboardPage() {
   const year = new Date().getFullYear();
   const month = new Date().getMonth() + 1;
   const qc = useQueryClient();
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedOverdue, setSelectedOverdue] = useState<string[]>([]);
 
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [selectedOverdue, setSelectedOverdue] = useState<string[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+
+  // ── Queries ──────────────────────────────────────────────────────────────
   const { data: summary } = useQuery({
     queryKey: ['payment-summary', year],
     queryFn: () => paymentsApi.getSummary(year).then((r) => r.data.data),
@@ -37,26 +43,36 @@ export default function TreasurerDashboardPage() {
     queryFn: () => paymentsApi.getOverdue().then((r) => r.data.data),
   });
 
-  const [scope, setScope] = useState<'individual' | 'all'>('individual');
+  const { data: activeEvents } = useQuery({
+    queryKey: ['active-payment-events'],
+    queryFn: () => paymentEventsApi.getActive().then((r) => r.data.data),
+    refetchInterval: 30_000,
+  });
 
+  // ── Individual payment mutation ───────────────────────────────────────────
   const addPaymentMutation = useMutation({
-    mutationFn: (data: any) =>
-      scope === 'all'
-        ? paymentsApi.bulkCreate(data)
-        : paymentsApi.create(data),
-    onSuccess: (res) => {
+    mutationFn: (data: any) => paymentsApi.create(data),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['payment-summary'] });
       qc.invalidateQueries({ queryKey: ['overdue-payments'] });
       setShowAddModal(false);
-      resetForm();
-      if (scope === 'all') {
-        const { created, skipped } = res.data.data;
-        toast.success(`Created ${created} payment(s)${skipped ? `, skipped ${skipped} already recorded` : ''}`);
-      } else {
-        toast.success('Payment recorded');
-      }
+      resetPaymentForm();
+      toast.success('Payment recorded');
     },
     onError: () => toast.error('Failed to record payment'),
+  });
+
+  // ── Payment event mutation ────────────────────────────────────────────────
+  const createEventMutation = useMutation({
+    mutationFn: (data: any) => paymentEventsApi.create(data),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['active-payment-events'] });
+      qc.invalidateQueries({ queryKey: ['payment-summary'] });
+      setShowEventModal(false);
+      resetEventForm();
+      toast.success(`Payment event created for ${res.data.data.memberCount} members`);
+    },
+    onError: () => toast.error('Failed to create payment event'),
   });
 
   const reminderMutation = useMutation({
@@ -65,19 +81,9 @@ export default function TreasurerDashboardPage() {
     onError: () => toast.error('Failed to send reminders'),
   });
 
+  // ── Individual payment form ───────────────────────────────────────────────
   const { register, handleSubmit, reset, setValue, watch } = useForm();
   const paymentType = watch('type');
-  const watchedDueDate = watch('dueDate');
-
-  useEffect(() => {
-    if (watchedDueDate) {
-      const d = new Date(watchedDueDate);
-      if (!isNaN(d.getTime())) {
-        setValue('month', d.getMonth() + 1);
-        setValue('year', d.getFullYear());
-      }
-    }
-  }, [watchedDueDate, setValue]);
 
   const [memberQuery, setMemberQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -92,41 +98,53 @@ export default function TreasurerDashboardPage() {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (memberRef.current && !memberRef.current.contains(e.target as Node)) {
-        setShowSuggestions(false);
-      }
+      if (memberRef.current && !memberRef.current.contains(e.target as Node)) setShowSuggestions(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const handleMemberSelect = (member: { id: string; fullName: string; membershipId: string }) => {
-    setSelectedMember(member);
+  const handleMemberSelect = (m: { id: string; fullName: string; membershipId: string }) => {
+    setSelectedMember(m);
     setMemberQuery('');
     setShowSuggestions(false);
-    setValue('memberId', member.id, { shouldValidate: true });
+    setValue('memberId', m.id, { shouldValidate: true });
   };
 
-  const clearMember = () => {
-    setSelectedMember(null);
-    setMemberQuery('');
-    setValue('memberId', '');
-  };
+  const resetPaymentForm = () => { reset(); setSelectedMember(null); setMemberQuery(''); };
 
-  const resetForm = () => {
-    reset();
-    setSelectedMember(null);
-    setMemberQuery('');
-    setScope('individual');
-  };
+  // ── Payment event form ────────────────────────────────────────────────────
+  const { register: regEvt, handleSubmit: handleEvt, reset: resetEvt, setValue: setEvtValue, watch: watchEvt } = useForm();
+  const evtType = watchEvt('type');
+  const evtDueDate = watchEvt('dueDate');
+
+  useEffect(() => {
+    if (evtDueDate) {
+      const d = new Date(evtDueDate);
+      if (!isNaN(d.getTime())) {
+        setEvtValue('month', d.getMonth() + 1);
+        setEvtValue('year', d.getFullYear());
+      }
+    }
+  }, [evtDueDate, setEvtValue]);
+
+  const resetEventForm = () => resetEvt();
 
   const chartData = analytics?.map((d: any) => ({ name: MONTHS[d.month - 1], income: d.income })) || [];
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="page-header">
         <h1 className="page-title">Treasurer Dashboard</h1>
-        <Button icon={<Plus size={16} />} onClick={() => setShowAddModal(true)}>Record Payment</Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" icon={<CalendarClock size={16} />} onClick={() => setShowEventModal(true)}>
+            New Payment Event
+          </Button>
+          <Button icon={<Plus size={16} />} onClick={() => setShowAddModal(true)}>
+            Record Payment
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -150,19 +168,70 @@ export default function TreasurerDashboardPage() {
         </ResponsiveContainer>
       </div>
 
+      {/* Active Payment Events */}
+      {(activeEvents?.length || 0) > 0 && (
+        <div className="card overflow-hidden">
+          <div className="p-4 border-b border-surface-200 dark:border-surface-700">
+            <h2 className="font-semibold text-slate-900 dark:text-slate-100">
+              Active Payment Events <span className="ml-1 text-xs font-normal text-slate-400">({activeEvents!.length} open)</span>
+            </h2>
+          </div>
+          <div className="divide-y divide-surface-100 dark:divide-surface-700">
+            {activeEvents!.map((ev: any) => {
+              const total = ev.totalCount || 0;
+              const paid = ev.paidCount || 0;
+              const pct = total > 0 ? Math.round((paid / total) * 100) : 0;
+              const isPastDue = ev.dueDate && new Date(ev.dueDate) < new Date();
+              return (
+                <button
+                  key={ev.id}
+                  onClick={() => setSelectedEventId(ev.id)}
+                  className="w-full text-left px-5 py-4 hover:bg-surface-50 dark:hover:bg-surface-800 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">{ev.title}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-surface-100 dark:bg-surface-700 text-slate-500">
+                          {ev.type?.replace(/_/g, ' ')}
+                        </span>
+                        {isPastDue && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">Past Due</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Due {formatDate(ev.dueDate, 'PPp')} · {formatCurrency(Number(ev.amount))} / member
+                      </p>
+                      <div className="mt-2 flex items-center gap-3">
+                        <div className="flex-1 h-1.5 bg-surface-100 dark:bg-surface-700 rounded-full overflow-hidden">
+                          <div className="h-1.5 bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-xs text-slate-500 whitespace-nowrap">{paid}/{total} paid</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-emerald-600">{formatCurrency(Number(ev.collectedAmount))}</p>
+                        <p className="text-xs text-slate-400">collected</p>
+                      </div>
+                      <ChevronRight size={16} className="text-slate-400" />
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Overdue Payments */}
       {(overdueData?.length || 0) > 0 && (
         <div className="card overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b border-surface-200 dark:border-surface-700">
             <h2 className="font-semibold text-slate-900 dark:text-slate-100">Overdue Payments ({overdueData?.length})</h2>
-            <Button
-              size="sm"
-              variant="secondary"
-              icon={<Send size={14} />}
-              disabled={selectedOverdue.length === 0}
-              onClick={() => reminderMutation.mutate(selectedOverdue)}
-              loading={reminderMutation.isPending}
-            >
+            <Button size="sm" variant="secondary" icon={<Send size={14} />}
+              disabled={selectedOverdue.length === 0} loading={reminderMutation.isPending}
+              onClick={() => reminderMutation.mutate(selectedOverdue)}>
               Send Reminders ({selectedOverdue.length})
             </Button>
           </div>
@@ -170,11 +239,12 @@ export default function TreasurerDashboardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-surface-50 dark:bg-surface-800/50 border-b border-surface-200 dark:border-surface-700">
-                  <th className="px-4 py-2.5 text-left"><input type="checkbox" onChange={(e) => {
-                    if (e.target.checked) setSelectedOverdue(overdueData?.map((p: any) => p.id) || []);
-                    else setSelectedOverdue([]);
-                  }} /></th>
-                  {['Member', 'Amount', 'Due Date', 'Status'].map((h) => (
+                  <th className="px-4 py-2.5 text-left">
+                    <input type="checkbox" onChange={(e) => {
+                      setSelectedOverdue(e.target.checked ? overdueData?.map((p: any) => p.id) || [] : []);
+                    }} />
+                  </th>
+                  {['Member', 'Type', 'Amount', 'Due Date', 'Status'].map((h) => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
                   ))}
                 </tr>
@@ -184,12 +254,15 @@ export default function TreasurerDashboardPage() {
                   <tr key={p.id} className="hover:bg-surface-50 dark:hover:bg-surface-800">
                     <td className="px-4 py-3">
                       <input type="checkbox" checked={selectedOverdue.includes(p.id)}
-                        onChange={(e) => setSelectedOverdue(e.target.checked ? [...selectedOverdue, p.id] : selectedOverdue.filter((id) => id !== p.id))} />
+                        onChange={(e) => setSelectedOverdue(e.target.checked
+                          ? [...selectedOverdue, p.id]
+                          : selectedOverdue.filter((id) => id !== p.id))} />
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-900 dark:text-slate-100">{p.member?.fullName}</p>
                       <p className="text-xs text-slate-400">{p.member?.membershipId}</p>
                     </td>
+                    <td className="px-4 py-3 text-slate-500 text-xs">{p.type?.replace(/_/g, ' ')}</td>
                     <td className="px-4 py-3 font-semibold">{formatCurrency(Number(p.amount))}</td>
                     <td className="px-4 py-3 text-red-500">{p.dueDate ? formatDate(p.dueDate, 'PP') : '—'}</td>
                     <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
@@ -201,87 +274,39 @@ export default function TreasurerDashboardPage() {
         </div>
       )}
 
-      {/* Add Payment Modal */}
-      <Modal isOpen={showAddModal} onClose={() => { setShowAddModal(false); resetForm(); }} title="Record Payment">
-        <form onSubmit={handleSubmit((data) => {
-          if (scope === 'all') {
-            addPaymentMutation.mutate({ scope: 'ALL', ...data });
-          } else {
-            addPaymentMutation.mutate(data);
-          }
-        })} className="space-y-4">
-
-          {/* Scope toggle */}
-          <div className="flex rounded-xl border border-surface-200 dark:border-surface-700 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setScope('individual')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
-                scope === 'individual'
-                  ? 'bg-primary-600 text-white'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-surface-50 dark:hover:bg-surface-800'
-              }`}
-            >
-              <User size={15} /> Individual Member
-            </button>
-            <button
-              type="button"
-              onClick={() => setScope('all')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
-                scope === 'all'
-                  ? 'bg-primary-600 text-white'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-surface-50 dark:hover:bg-surface-800'
-              }`}
-            >
-              <Users size={15} /> All Active Members
-            </button>
+      {/* ── Record Individual Payment Modal ─────────────────────────────── */}
+      <Modal isOpen={showAddModal} onClose={() => { setShowAddModal(false); resetPaymentForm(); }} title="Record Individual Payment">
+        <form onSubmit={handleSubmit((data) => addPaymentMutation.mutate(data))} className="space-y-4">
+          <div ref={memberRef} className="relative w-full">
+            <label className="label">Member</label>
+            <input type="hidden" {...register('memberId', { required: true })} />
+            {selectedMember ? (
+              <div className="input flex items-center justify-between">
+                <span className="text-slate-900 dark:text-slate-100 text-sm">
+                  {selectedMember.fullName}
+                  <span className="ml-2 text-xs text-slate-400">{selectedMember.membershipId}</span>
+                </span>
+                <button type="button" onClick={() => { setSelectedMember(null); setMemberQuery(''); setValue('memberId', ''); }}
+                  className="text-slate-400 hover:text-slate-600 text-xs ml-2">✕</button>
+              </div>
+            ) : (
+              <input className="input" placeholder="Search by name or member ID..."
+                value={memberQuery}
+                onChange={(e) => { setMemberQuery(e.target.value); setShowSuggestions(true); }}
+                onFocus={() => setShowSuggestions(true)} />
+            )}
+            {showSuggestions && !selectedMember && (memberSuggestions?.length ?? 0) > 0 && (
+              <ul className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                {memberSuggestions!.map((m: any) => (
+                  <li key={m.id} onMouseDown={() => handleMemberSelect({ id: m.id, fullName: m.fullName, membershipId: m.membershipId })}
+                    className="px-4 py-2.5 cursor-pointer hover:bg-surface-50 dark:hover:bg-surface-700 flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{m.fullName}</span>
+                    <span className="text-xs text-slate-400">{m.membershipId}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-
-          {scope === 'all' && (
-            <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-amber-700 dark:text-amber-400 text-xs">
-              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-              Creates a pending payment for every active member. Members already recorded for this type/month/year are skipped. Once the due date passes, all unpaid become overdue.
-            </div>
-          )}
-
-          {/* Member autocomplete — individual only */}
-          {scope === 'individual' && (
-            <div ref={memberRef} className="relative w-full">
-              <label className="label">Member</label>
-              <input type="hidden" {...register('memberId', { required: scope === 'individual' })} />
-              {selectedMember ? (
-                <div className="input flex items-center justify-between">
-                  <span className="text-slate-900 dark:text-slate-100 text-sm">
-                    {selectedMember.fullName}
-                    <span className="ml-2 text-xs text-slate-400">{selectedMember.membershipId}</span>
-                  </span>
-                  <button type="button" onClick={clearMember} className="text-slate-400 hover:text-slate-600 text-xs ml-2">✕</button>
-                </div>
-              ) : (
-                <input
-                  className="input"
-                  placeholder="Search by name or member ID..."
-                  value={memberQuery}
-                  onChange={(e) => { setMemberQuery(e.target.value); setShowSuggestions(true); }}
-                  onFocus={() => setShowSuggestions(true)}
-                />
-              )}
-              {showSuggestions && !selectedMember && (memberSuggestions?.length ?? 0) > 0 && (
-                <ul className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-lg shadow-lg max-h-52 overflow-y-auto">
-                  {memberSuggestions!.map((m: any) => (
-                    <li
-                      key={m.id}
-                      onMouseDown={() => handleMemberSelect({ id: m.id, fullName: m.fullName, membershipId: m.membershipId })}
-                      className="px-4 py-2.5 cursor-pointer hover:bg-surface-50 dark:hover:bg-surface-700 flex items-center justify-between"
-                    >
-                      <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{m.fullName}</span>
-                      <span className="text-xs text-slate-400">{m.membershipId}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
 
           <Select label="Payment Type" options={[
             { value: 'MONTHLY_MEETING', label: 'Monthly Meeting' },
@@ -292,43 +317,72 @@ export default function TreasurerDashboardPage() {
             { value: 'OTHER', label: 'Other' },
             { value: 'CUSTOM', label: 'Custom' },
           ]} {...register('type', { required: true })} />
-
           {paymentType === 'CUSTOM' && (
             <Input label="Custom Type" placeholder="e.g. Annual Subscription" {...register('customType', { required: true })} />
           )}
-
           <div className="grid grid-cols-2 gap-3">
             <Input label="Amount (Rs.)" type="number" step="0.01" {...register('amount', { required: true })} />
-            {scope === 'individual' && (
-              <Input label="Paid Amount" type="number" step="0.01" placeholder="Leave blank = fully paid" {...register('paidAmount')} />
-            )}
+            <Input label="Paid Amount" type="number" step="0.01" placeholder="Leave blank = fully paid" {...register('paidAmount')} />
           </div>
-
-          {/* Due date — auto-fills month/year */}
-          <div>
-            <Input
-              label={scope === 'all' ? 'Due Date & Time (payment deadline)' : 'Due Date & Time (optional)'}
-              type="datetime-local"
-              {...register('dueDate', { required: scope === 'all' })}
-            />
-            <p className="text-xs text-slate-400 mt-1">Month and year are auto-filled from this date</p>
-          </div>
-
           <div className="grid grid-cols-2 gap-3">
             <Input label="Month" type="number" min="1" max="12" defaultValue={month} {...register('month')} />
             <Input label="Year" type="number" defaultValue={year} {...register('year')} />
           </div>
-
           <Input label="Description" placeholder="Optional note" {...register('description')} />
-
           <div className="flex gap-2 justify-end pt-2">
-            <Button variant="secondary" type="button" onClick={() => { setShowAddModal(false); resetForm(); }}>Cancel</Button>
-            <Button type="submit" loading={addPaymentMutation.isPending}>
-              {scope === 'all' ? 'Create for All Members' : 'Record Payment'}
-            </Button>
+            <Button variant="secondary" type="button" onClick={() => { setShowAddModal(false); resetPaymentForm(); }}>Cancel</Button>
+            <Button type="submit" loading={addPaymentMutation.isPending}>Record Payment</Button>
           </div>
         </form>
       </Modal>
+
+      {/* ── Create Payment Event Modal ───────────────────────────────────── */}
+      <Modal isOpen={showEventModal} onClose={() => { setShowEventModal(false); resetEventForm(); }} title="New Payment Event">
+        <form onSubmit={handleEvt((data) => createEventMutation.mutate(data))} className="space-y-4">
+          <div className="p-3 bg-primary-50 dark:bg-primary-900/20 rounded-lg text-primary-700 dark:text-primary-300 text-xs">
+            Creates a pending payment for every active member. Once the due date passes, all unpaid members get arrears and the overdue count increases.
+          </div>
+
+          <Input label="Event Title" placeholder="e.g. January 2025 Monthly Meeting Fee" {...regEvt('title', { required: true })} />
+
+          <Select label="Payment Type" options={[
+            { value: 'MONTHLY_MEETING', label: 'Monthly Meeting' },
+            { value: 'SPECIAL_MEETING', label: 'Special Meeting' },
+            { value: 'COMMUNITY_EVENT', label: 'Community Event' },
+            { value: 'VOLUNTEER_EVENT', label: 'Volunteer Event' },
+            { value: 'RELIGIOUS_EVENT', label: 'Religious Event' },
+            { value: 'OTHER', label: 'Other' },
+            { value: 'CUSTOM', label: 'Custom' },
+          ]} {...regEvt('type', { required: true })} />
+          {evtType === 'CUSTOM' && (
+            <Input label="Custom Type" placeholder="e.g. Annual Subscription" {...regEvt('customType', { required: true })} />
+          )}
+
+          <Input label="Amount per Member (Rs.)" type="number" step="0.01" {...regEvt('amount', { required: true })} />
+
+          <div>
+            <Input label="Due Date & Time" type="datetime-local" {...regEvt('dueDate', { required: true })} />
+            <p className="text-xs text-slate-400 mt-1">Month and year are auto-filled from this date</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Month" type="number" min="1" max="12" defaultValue={month} {...regEvt('month')} />
+            <Input label="Year" type="number" defaultValue={year} {...regEvt('year')} />
+          </div>
+
+          <Input label="Description" placeholder="Optional note for members" {...regEvt('description')} />
+
+          <div className="flex gap-2 justify-end pt-2">
+            <Button variant="secondary" type="button" onClick={() => { setShowEventModal(false); resetEventForm(); }}>Cancel</Button>
+            <Button type="submit" loading={createEventMutation.isPending}>Create Payment Event</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ── Payment Event Detail overlay ─────────────────────────────────── */}
+      {selectedEventId && (
+        <PaymentEventDetail eventId={selectedEventId} onClose={() => setSelectedEventId(null)} />
+      )}
     </div>
   );
 }

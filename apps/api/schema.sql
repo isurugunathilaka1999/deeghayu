@@ -62,6 +62,22 @@ CREATE TABLE refresh_tokens (
 );
 CREATE INDEX idx_refresh_tokens_token ON refresh_tokens(token);
 
+-- PAYMENT EVENTS (compulsory all-member payment campaigns)
+CREATE TABLE payment_events (
+  id           TEXT PRIMARY KEY,
+  title        TEXT NOT NULL,
+  type         "PaymentType" NOT NULL,
+  "customType" TEXT,
+  amount       NUMERIC(10,2) NOT NULL,
+  "dueDate"    TIMESTAMPTZ NOT NULL,
+  month        INT,
+  year         INT,
+  description  TEXT,
+  "recordedBy" TEXT NOT NULL,
+  "createdAt"  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt"  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- PAYMENTS
 CREATE TABLE payments (
   id           TEXT PRIMARY KEY,
@@ -76,6 +92,7 @@ CREATE TABLE payments (
   year         INT,
   description  TEXT,
   "customType" TEXT,
+  "eventId"    TEXT REFERENCES payment_events(id),
   "receiptUrl" TEXT,
   "recordedBy" TEXT,
   "createdAt"  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
