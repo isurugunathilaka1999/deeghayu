@@ -197,10 +197,10 @@ export class PaymentService {
         status = $1,
         "paidAmount" = $2,
         description = COALESCE($3, description),
-        "paidAt" = CASE WHEN $1 = 'PAID' THEN COALESCE("paidAt", NOW()) ELSE "paidAt" END,
+        "paidAt" = CASE WHEN $5 = 'PAID' THEN COALESCE("paidAt", NOW()) ELSE "paidAt" END,
         "updatedAt" = NOW()
        WHERE id = $4 RETURNING *`,
-      [status, updatedPaidAmount, data.description || null, id]
+      [status, updatedPaidAmount, data.description || null, id, status]
     );
     return result.rows[0];
   }
