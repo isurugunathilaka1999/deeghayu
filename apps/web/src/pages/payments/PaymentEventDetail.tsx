@@ -31,7 +31,11 @@ export function PaymentEventDetail({ eventId, onClose }: Props) {
       qc.invalidateQueries({ queryKey: ['payment-summary'] });
       toast.success('Payment recorded');
     },
-    onError: () => toast.error('Failed to record payment'),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message || 'Failed to record payment';
+      const status = err?.response?.status;
+      toast.error(status ? `${msg} (${status})` : msg);
+    },
   });
 
   if (isLoading || !data) {

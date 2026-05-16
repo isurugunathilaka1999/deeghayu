@@ -95,8 +95,9 @@ export class PaymentEventService {
 
     const totalCount = payments.length;
     const paidCount = payments.filter((p: any) => p.status === 'PAID' || p.status === 'WAIVED').length;
+    const overdueCount = payments.filter((p: any) => p.status === 'OVERDUE').length;
     const collectedAmount = payments.reduce((s: number, p: any) => s + Number(p.paidAmount), 0);
 
-    return { ...eventRes.rows[0], payments, totalCount, paidCount, collectedAmount };
+    return { ...eventRes.rows[0], payments, totalCount, paidCount, overdueCount, collectedAmount };
   }
 }
