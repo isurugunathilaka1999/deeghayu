@@ -1,5 +1,6 @@
 import 'express-async-errors';
 import express from 'express';
+import path from 'path';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -17,6 +18,8 @@ import attendanceRoutes from './modules/attendance/attendance.routes';
 import committeeRoutes from './modules/committee/committee.routes';
 import notificationRoutes from './modules/notifications/notification.routes';
 import reportRoutes from './modules/reports/report.routes';
+import uploadRoutes from './modules/upload/upload.routes';
+import galleryRoutes from './modules/gallery/gallery.routes';
 
 const app = express();
 
@@ -58,6 +61,9 @@ app.use(
   })
 );
 
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
 // Global rate limit
 app.use('/api', globalLimiter);
 
@@ -76,6 +82,8 @@ app.use(`${API_PREFIX}/attendance`, attendanceRoutes);
 app.use(`${API_PREFIX}/committee`, committeeRoutes);
 app.use(`${API_PREFIX}/notifications`, notificationRoutes);
 app.use(`${API_PREFIX}/reports`, reportRoutes);
+app.use(`${API_PREFIX}/upload`, uploadRoutes);
+app.use(`${API_PREFIX}/gallery`, galleryRoutes);
 
 // 404
 app.use((_req, res) => {

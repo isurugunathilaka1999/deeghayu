@@ -109,10 +109,14 @@ export class PaymentService {
     const memberCheck = await pool.query('SELECT id FROM members WHERE id = $1', [data.memberId]);
     if (!memberCheck.rows[0]) throw new NotFoundError('Member not found');
 
-    const paidAmount = data.paidAmount ?? data.amount;
+    const amount = Number(data.amount);
+    const paidAmount = (data.paidAmount != null && String(data.paidAmount).trim() !== '')
+      ? Number(data.paidAmount)
+      : amount;
+
     let status: PaymentStatus = 'PAID';
     if (paidAmount === 0) status = 'PENDING';
-    else if (paidAmount < data.amount) status = 'PARTIAL';
+    else if (paidAmount < amount) status = 'PARTIAL';
 
     const result = await pool.query(
       `INSERT INTO payments (id, "memberId", type, status, amount, "paidAmount", "dueDate", "paidAt",
@@ -123,12 +127,12 @@ export class PaymentService {
         data.memberId,
         data.type,
         status,
-        data.amount,
+        amount,
         paidAmount,
         data.dueDate ? new Date(data.dueDate) : null,
         paidAmount > 0 ? new Date() : null,
-        data.month || null,
-        data.year || null,
+        data.month ? Number(data.month) : null,
+        data.year ? Number(data.year) : null,
         data.description || null,
         data.recordedBy,
       ]

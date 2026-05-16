@@ -41,6 +41,9 @@ import CommitteePage from '../pages/committee/CommitteePage';
 // Reports
 import ReportsPage from '../pages/reports/ReportsPage';
 
+// Gallery
+import GalleryPage from '../pages/gallery/GalleryPage';
+
 // Settings
 import SettingsPage from '../pages/settings/SettingsPage';
 
@@ -111,6 +114,9 @@ export default function AppRouter() {
 
         {/* Reports */}
         <Route path="/reports" element={<AdminRoute><ReportsPage /></AdminRoute>} />
+
+        {/* Gallery */}
+        <Route path="/gallery" element={<GalleryPage />} />
 
         {/* Settings */}
         <Route path="/settings" element={<SettingsPage />} />

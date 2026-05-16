@@ -247,6 +247,72 @@ export class MemberService {
     return paginatedResponse(records, parseInt(countResult.rows[0].count, 10), page, limit);
   }
 
+  async getArrears(memberId: string) {
+    const memberResult = await pool.query(
+      'SELECT id, "dateJoined", status FROM members WHERE id = $1',
+      [memberId]
+    );
+    if (!memberResult.rows[0]) throw new NotFoundError('Member not found');
+    const member = memberResult.rows[0];
+
+    if (member.status === 'PENDING' || member.status === 'DECEASED') {
+      return { arrears: [], totalArrears: 0, monthlyFee: 0 };
+    }
+
+    const [settingResult, paymentsResult] = await Promise.all([
+      pool.query("SELECT value FROM system_settings WHERE key = 'monthly_fee'"),
+      pool.query(
+        `SELECT month, year, status, amount, "paidAmount" FROM payments
+         WHERE "memberId" = $1 AND type = 'MONTHLY_FEE'`,
+        [memberId]
+      ),
+    ]);
+
+    const monthlyFee = settingResult.rows[0] ? Number(settingResult.rows[0].value) : 0;
+
+    const paymentMap = new Map<string, any>();
+    paymentsResult.rows.forEach((p) => {
+      paymentMap.set(`${p.year}-${p.month}`, p);
+    });
+
+    const joinDate = new Date(member.dateJoined);
+    let y = joinDate.getFullYear();
+    let m = joinDate.getMonth() + 1;
+
+    const now = new Date();
+    const endYear = now.getFullYear();
+    const endMonth = now.getMonth() + 1;
+
+    const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    const arrears: Array<{
+      year: number; month: number; monthName: string;
+      amount: number; paidAmount: number; balance: number; status: string;
+    }> = [];
+
+    while (y < endYear || (y === endYear && m <= endMonth)) {
+      const payment = paymentMap.get(`${y}-${m}`);
+
+      if (!payment) {
+        if (monthlyFee > 0) {
+          arrears.push({ year: y, month: m, monthName: MONTH_NAMES[m - 1], amount: monthlyFee, paidAmount: 0, balance: monthlyFee, status: 'UNPAID' });
+        }
+      } else if (payment.status === 'PARTIAL') {
+        const balance = Number(payment.amount) - Number(payment.paidAmount);
+        if (balance > 0) {
+          arrears.push({ year: y, month: m, monthName: MONTH_NAMES[m - 1], amount: Number(payment.amount), paidAmount: Number(payment.paidAmount), balance, status: 'PARTIAL' });
+        }
+      } else if (payment.status === 'PENDING' || payment.status === 'OVERDUE') {
+        arrears.push({ year: y, month: m, monthName: MONTH_NAMES[m - 1], amount: Number(payment.amount), paidAmount: Number(payment.paidAmount), balance: Number(payment.amount) - Number(payment.paidAmount), status: payment.status });
+      }
+
+      m++;
+      if (m > 12) { m = 1; y++; }
+    }
+
+    return { arrears, totalArrears: arrears.reduce((s, a) => s + a.balance, 0), monthlyFee };
+  }
+
   async exportMembers(fmt: 'pdf' | 'excel' | 'csv', filters: any) {
     const result = await pool.query(
       `SELECT m.*, u.email, u.role

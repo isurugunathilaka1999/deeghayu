@@ -40,6 +40,11 @@ export const getAttendance = async (req: Request, res: Response) => {
   res.json({ success: true, ...result });
 };
 
+export const getArrears = async (req: Request, res: Response) => {
+  const result = await memberService.getArrears(req.params.id);
+  res.json({ success: true, data: result });
+};
+
 export const exportMembers = async (req: Request, res: Response) => {
   const fmt = (req.query.format as string) || 'excel';
   const buffer = await memberService.exportMembers(fmt as any, req.query);

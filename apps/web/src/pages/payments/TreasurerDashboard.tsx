@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DollarSign, AlertTriangle, Plus, Send } from 'lucide-react';
 import { paymentsApi } from '../../api/payments.api';
+import { membersApi } from '../../api/members.api';
 import { Button } from '../../components/ui/Button';
 import { StatCard } from '../../components/ui/StatCard';
 import { StatusBadge } from '../../components/ui/Badge';
@@ -41,6 +42,7 @@ export default function TreasurerDashboardPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['payment-summary'] });
       setShowAddModal(false);
+      resetForm();
       toast.success('Payment recorded');
     },
     onError: () => toast.error('Failed to record payment'),
@@ -52,7 +54,47 @@ export default function TreasurerDashboardPage() {
     onError: () => toast.error('Failed to send reminders'),
   });
 
-  const { register, handleSubmit, reset } = useForm();
+  const { register, handleSubmit, reset, setValue } = useForm();
+
+  const [memberQuery, setMemberQuery] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<{ id: string; fullName: string; membershipId: string } | null>(null);
+  const memberRef = useRef<HTMLDivElement>(null);
+
+  const { data: memberSuggestions } = useQuery({
+    queryKey: ['member-search', memberQuery],
+    queryFn: () => membersApi.getAll({ search: memberQuery, limit: 8 }).then((r) => r.data.data),
+    enabled: memberQuery.length >= 1 && !selectedMember,
+  });
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (memberRef.current && !memberRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleMemberSelect = (member: { id: string; fullName: string; membershipId: string }) => {
+    setSelectedMember(member);
+    setMemberQuery('');
+    setShowSuggestions(false);
+    setValue('memberId', member.id, { shouldValidate: true });
+  };
+
+  const clearMember = () => {
+    setSelectedMember(null);
+    setMemberQuery('');
+    setValue('memberId', '');
+  };
+
+  const resetForm = () => {
+    reset();
+    setSelectedMember(null);
+    setMemberQuery('');
+  };
 
   const chartData = analytics?.map((d: any) => ({ name: MONTHS[d.month - 1], income: d.income })) || [];
 
@@ -136,9 +178,44 @@ export default function TreasurerDashboardPage() {
       )}
 
       {/* Add Payment Modal */}
-      <Modal isOpen={showAddModal} onClose={() => { setShowAddModal(false); reset(); }} title="Record Payment">
+      <Modal isOpen={showAddModal} onClose={() => { setShowAddModal(false); resetForm(); }} title="Record Payment">
         <form onSubmit={handleSubmit((data) => addPaymentMutation.mutate(data))} className="space-y-4">
-          <Input label="Member ID" placeholder="DC-XXXX or UUID" {...register('memberId', { required: true })} />
+          {/* Member autocomplete */}
+          <div ref={memberRef} className="relative w-full">
+            <label className="label">Member</label>
+            <input type="hidden" {...register('memberId', { required: true })} />
+            {selectedMember ? (
+              <div className="input flex items-center justify-between">
+                <span className="text-slate-900 dark:text-slate-100 text-sm">
+                  {selectedMember.fullName}
+                  <span className="ml-2 text-xs text-slate-400">{selectedMember.membershipId}</span>
+                </span>
+                <button type="button" onClick={clearMember} className="text-slate-400 hover:text-slate-600 text-xs ml-2">✕</button>
+              </div>
+            ) : (
+              <input
+                className="input"
+                placeholder="Search by name or member ID..."
+                value={memberQuery}
+                onChange={(e) => { setMemberQuery(e.target.value); setShowSuggestions(true); }}
+                onFocus={() => setShowSuggestions(true)}
+              />
+            )}
+            {showSuggestions && !selectedMember && (memberSuggestions?.length ?? 0) > 0 && (
+              <ul className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                {memberSuggestions!.map((m: any) => (
+                  <li
+                    key={m.id}
+                    onMouseDown={() => handleMemberSelect({ id: m.id, fullName: m.fullName, membershipId: m.membershipId })}
+                    className="px-4 py-2.5 cursor-pointer hover:bg-surface-50 dark:hover:bg-surface-700 flex items-center justify-between"
+                  >
+                    <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{m.fullName}</span>
+                    <span className="text-xs text-slate-400">{m.membershipId}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <Select label="Payment Type" options={[
             { value: 'MONTHLY_FEE', label: 'Monthly Fee' },
             { value: 'JOINING_FEE', label: 'Joining Fee' },
@@ -156,7 +233,7 @@ export default function TreasurerDashboardPage() {
           </div>
           <Input label="Description" placeholder="Optional note" {...register('description')} />
           <div className="flex gap-2 justify-end pt-2">
-            <Button variant="secondary" type="button" onClick={() => { setShowAddModal(false); reset(); }}>Cancel</Button>
+            <Button variant="secondary" type="button" onClick={() => { setShowAddModal(false); resetForm(); }}>Cancel</Button>
             <Button type="submit" loading={addPaymentMutation.isPending}>Record</Button>
           </div>
         </form>

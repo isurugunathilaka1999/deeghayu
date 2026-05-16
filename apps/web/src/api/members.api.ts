@@ -8,6 +8,7 @@ export const membersApi = {
   getQr: (id: string) => api.get(`/members/${id}/qr`),
   getPayments: (id: string, params?: any) => api.get(`/members/${id}/payments`, { params }),
   getAttendance: (id: string, params?: any) => api.get(`/members/${id}/attendance`, { params }),
+  getArrears: (id: string) => api.get(`/members/${id}/arrears`),
   export: (format: string, params?: any) =>
     api.get('/members/export', { params: { format, ...params }, responseType: 'blob' }),
 };

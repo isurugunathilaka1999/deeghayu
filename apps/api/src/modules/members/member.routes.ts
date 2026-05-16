@@ -16,5 +16,6 @@ router.patch('/:id/status', authorizeMinRole(Role.ADMIN), memberController.updat
 router.get('/:id/qr', memberController.getQr);
 router.get('/:id/payments', memberController.getPayments);
 router.get('/:id/attendance', memberController.getAttendance);
+router.get('/:id/arrears', memberController.getArrears);
 
 export default router;

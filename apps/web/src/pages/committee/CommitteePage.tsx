@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Users2, Plus, Crown, ChevronDown, ChevronUp } from 'lucide-react';
 import { committeeApi } from '../../api/committee.api';
+import { membersApi } from '../../api/members.api';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input, Select } from '../../components/ui/Input';
@@ -53,14 +54,49 @@ export default function CommitteePage() {
     mutationFn: ({ panelId, data }: { panelId: string; data: any }) => committeeApi.assignRole(panelId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['committee-panels'] });
-      setShowAddRole(null);
+      closeRoleModal();
       toast.success('Role assigned');
     },
-    onError: () => toast.error('Failed to assign role'),
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Failed to assign role'),
   });
 
   const panelForm = useForm();
   const roleForm = useForm();
+
+  const [memberQuery, setMemberQuery] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<{ id: string; fullName: string; membershipId: string } | null>(null);
+  const memberRef = useRef<HTMLDivElement>(null);
+
+  const { data: memberSuggestions } = useQuery({
+    queryKey: ['member-search', memberQuery],
+    queryFn: () => membersApi.getAll({ search: memberQuery, limit: 8 }).then((r) => r.data.data),
+    enabled: memberQuery.length >= 1 && !selectedMember,
+  });
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (memberRef.current && !memberRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleMemberSelect = (member: { id: string; fullName: string; membershipId: string }) => {
+    setSelectedMember(member);
+    setMemberQuery('');
+    setShowSuggestions(false);
+    roleForm.setValue('memberId', member.id, { shouldValidate: true });
+  };
+
+  const closeRoleModal = () => {
+    setShowAddRole(null);
+    setSelectedMember(null);
+    setMemberQuery('');
+    roleForm.reset();
+  };
 
   if (isLoading) return <PageLoader />;
 
@@ -160,9 +196,44 @@ export default function CommitteePage() {
       </Modal>
 
       {/* Assign Role Modal */}
-      <Modal isOpen={!!showAddRole} onClose={() => setShowAddRole(null)} title="Assign Role">
+      <Modal isOpen={!!showAddRole} onClose={closeRoleModal} title="Assign Role">
         <form onSubmit={roleForm.handleSubmit((data) => assignRoleMutation.mutate({ panelId: showAddRole!, data }))} className="space-y-4">
-          <Input label="Member ID (UUID)" placeholder="Member's ID" {...roleForm.register('memberId', { required: true })} />
+          {/* Member autocomplete */}
+          <div ref={memberRef} className="relative w-full">
+            <label className="label">Member</label>
+            <input type="hidden" {...roleForm.register('memberId', { required: true })} />
+            {selectedMember ? (
+              <div className="input flex items-center justify-between">
+                <span className="text-slate-900 dark:text-slate-100 text-sm">
+                  {selectedMember.fullName}
+                  <span className="ml-2 text-xs text-slate-400">{selectedMember.membershipId}</span>
+                </span>
+                <button type="button" onClick={() => { setSelectedMember(null); setMemberQuery(''); roleForm.setValue('memberId', ''); }} className="text-slate-400 hover:text-slate-600 text-xs ml-2">✕</button>
+              </div>
+            ) : (
+              <input
+                className="input"
+                placeholder="Search by name or member ID..."
+                value={memberQuery}
+                onChange={(e) => { setMemberQuery(e.target.value); setShowSuggestions(true); }}
+                onFocus={() => setShowSuggestions(true)}
+              />
+            )}
+            {showSuggestions && !selectedMember && (memberSuggestions?.length ?? 0) > 0 && (
+              <ul className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                {memberSuggestions!.map((m: any) => (
+                  <li
+                    key={m.id}
+                    onMouseDown={() => handleMemberSelect({ id: m.id, fullName: m.fullName, membershipId: m.membershipId })}
+                    className="px-4 py-2.5 cursor-pointer hover:bg-surface-50 dark:hover:bg-surface-700 flex items-center justify-between"
+                  >
+                    <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{m.fullName}</span>
+                    <span className="text-xs text-slate-400">{m.membershipId}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <Select label="Role" options={ROLE_OPTIONS} {...roleForm.register('role', { required: true })} />
           <Input label="Start Date" type="date" defaultValue={new Date().toISOString().split('T')[0]} {...roleForm.register('startDate', { required: true })} />
           <div>
@@ -170,7 +241,7 @@ export default function CommitteePage() {
             <textarea className="input" rows={2} {...roleForm.register('notes')} />
           </div>
           <div className="flex gap-2 justify-end">
-            <Button variant="secondary" type="button" onClick={() => setShowAddRole(null)}>Cancel</Button>
+            <Button variant="secondary" type="button" onClick={closeRoleModal}>Cancel</Button>
             <Button type="submit" loading={assignRoleMutation.isPending}>Assign</Button>
           </div>
         </form>

@@ -43,6 +43,12 @@ export default function EventDetailPage() {
     onError: () => toast.error('RSVP failed'),
   });
 
+  const reminderMutation = useMutation({
+    mutationFn: () => eventsApi.sendReminders(id!),
+    onSuccess: (res) => toast.success(`${res.data.data.sent} reminders sent`),
+    onError: () => toast.error('Failed to send reminders'),
+  });
+
   const loadQr = async () => {
     try {
       const res = await eventsApi.getQr(id!);
@@ -159,7 +165,7 @@ export default function EventDetailPage() {
               <Button variant="secondary" className="w-full" icon={<QrCode size={16} />} onClick={loadQr}>
                 View QR Code
               </Button>
-              <Button variant="secondary" className="w-full" icon={<Send size={16} />}>
+              <Button variant="secondary" className="w-full" icon={<Send size={16} />} onClick={() => reminderMutation.mutate()} loading={reminderMutation.isPending}>
                 Send Reminders
               </Button>
               <Button variant="secondary" className="w-full" icon={<Users size={16} />} onClick={() => navigate(`/attendance`)}>

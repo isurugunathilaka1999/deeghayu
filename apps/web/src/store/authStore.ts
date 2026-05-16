@@ -21,6 +21,7 @@ interface AuthState {
   isAuthenticated: boolean;
   setAuth: (user: AuthUser, accessToken: string, refreshToken: string) => void;
   setAccessToken: (token: string) => void;
+  updateUser: (patch: Partial<AuthUser & { member: Partial<AuthUser['member']> }>) => void;
   logout: () => void;
 }
 
@@ -36,6 +37,19 @@ export const useAuthStore = create<AuthState>()(
         set({ user, accessToken, refreshToken, isAuthenticated: true }),
 
       setAccessToken: (accessToken) => set({ accessToken }),
+
+      updateUser: (patch) =>
+        set((state) => ({
+          user: state.user
+            ? {
+                ...state.user,
+                ...patch,
+                member: state.user.member
+                  ? { ...state.user.member, ...(patch.member || {}) }
+                  : state.user.member,
+              }
+            : state.user,
+        })),
 
       logout: () =>
         set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false }),
