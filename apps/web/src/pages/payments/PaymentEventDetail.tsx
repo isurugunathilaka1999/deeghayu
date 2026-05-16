@@ -29,6 +29,7 @@ export function PaymentEventDetail({ eventId, onClose }: Props) {
       qc.invalidateQueries({ queryKey: ['payment-event', eventId] });
       qc.invalidateQueries({ queryKey: ['active-payment-events'] });
       qc.invalidateQueries({ queryKey: ['payment-summary'] });
+      qc.invalidateQueries({ queryKey: ['bank-accounts'] });
       toast.success('Payment recorded');
     },
     onError: (err: any) => {
@@ -125,8 +126,8 @@ export function PaymentEventDetail({ eventId, onClose }: Props) {
                             type="number"
                             step="0.01"
                             min="0"
-                            max={Number(p.amount)}
-                            placeholder={`Max ${Number(p.amount)}`}
+                            max={Number(p.amount) - Number(p.paidAmount)}
+                            placeholder={`Max ${Number(p.amount) - Number(p.paidAmount)}`}
                             value={paying[p.id] ?? ''}
                             onChange={(e) => setPaying((prev) => ({ ...prev, [p.id]: e.target.value }))}
                             className="input w-28 py-1.5 text-sm"

@@ -13,6 +13,7 @@ export class PaymentEventService {
     month?: number;
     year?: number;
     description?: string;
+    bankAccountId?: string;
     recordedBy: string;
   }) {
     const dueDate = new Date(data.dueDate);
@@ -38,12 +39,12 @@ export class PaymentEventService {
       const params: any[] = [];
       let i = 1;
       for (const memberId of memberIds) {
-        rows.push(`($${i},$${i+1},$${i+2},$${i+3},$${i+4},$${i+5},$${i+6},$${i+7},NULL,$${i+8},$${i+9},$${i+10},$${i+11},$${i+12},NOW(),NOW())`);
-        params.push(uuidv4(), memberId, data.type, customType, initialStatus, amount, 0, dueDate, month, year, data.description || null, data.recordedBy, eventId);
-        i += 13;
+        rows.push(`($${i},$${i+1},$${i+2},$${i+3},$${i+4},$${i+5},$${i+6},$${i+7},NULL,$${i+8},$${i+9},$${i+10},$${i+11},$${i+12},$${i+13},NOW(),NOW())`);
+        params.push(uuidv4(), memberId, data.type, customType, initialStatus, amount, 0, dueDate, month, year, data.description || null, data.recordedBy, eventId, data.bankAccountId || null);
+        i += 14;
       }
       await pool.query(
-        `INSERT INTO payments (id, "memberId", type, "customType", status, amount, "paidAmount", "dueDate", "paidAt", month, year, description, "recordedBy", "eventId", "createdAt", "updatedAt")
+        `INSERT INTO payments (id, "memberId", type, "customType", status, amount, "paidAmount", "dueDate", "paidAt", month, year, description, "recordedBy", "eventId", "bankAccountId", "createdAt", "updatedAt")
          VALUES ${rows.join(',')}`,
         params
       );

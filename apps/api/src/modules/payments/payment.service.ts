@@ -174,6 +174,7 @@ export class PaymentService {
     data: Partial<{
       status: PaymentStatus;
       paidAmount: number;
+      bankAccountId: string;
       description: string;
     }>
   ) {
@@ -181,8 +182,12 @@ export class PaymentService {
     if (!existing.rows[0]) throw new NotFoundError('Payment not found');
     const payment = existing.rows[0];
 
-    const updatedPaidAmount = data.paidAmount ?? Number(payment.paidAmount);
+    // paidAmount is treated as the additional amount being paid now (cumulative)
+    const currentPaid = Number(payment.paidAmount);
+    const additional = data.paidAmount != null ? Number(data.paidAmount) : 0;
     const amount = Number(payment.amount);
+    const updatedPaidAmount = Math.min(currentPaid + additional, amount);
+
     const isPastDue = payment.dueDate && new Date(payment.dueDate) < new Date();
     let status = data.status;
     if (!status) {
@@ -192,15 +197,20 @@ export class PaymentService {
       else status = 'PENDING';
     }
 
+    const bankAccountId = data.bankAccountId !== undefined
+      ? (data.bankAccountId || null)
+      : payment.bankAccountId ?? null;
+
     const result = await pool.query(
       `UPDATE payments SET
         status = $1,
         "paidAmount" = $2,
-        description = COALESCE($3, description),
-        "paidAt" = CASE WHEN $5 = 'PAID' THEN COALESCE("paidAt", NOW()) ELSE "paidAt" END,
+        "bankAccountId" = $3,
+        description = COALESCE($4, description),
+        "paidAt" = CASE WHEN $6 = 'PAID' THEN COALESCE("paidAt", NOW()) ELSE "paidAt" END,
         "updatedAt" = NOW()
-       WHERE id = $4 RETURNING *`,
-      [status, updatedPaidAmount, data.description || null, id, status]
+       WHERE id = $5 RETURNING *`,
+      [status, updatedPaidAmount, bankAccountId, data.description || null, id, status]
     );
     return result.rows[0];
   }

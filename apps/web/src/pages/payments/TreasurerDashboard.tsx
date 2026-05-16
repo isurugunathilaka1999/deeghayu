@@ -452,6 +452,17 @@ export default function TreasurerDashboardPage() {
             <Input label="Year" type="number" defaultValue={year} {...regEvt('year')} />
           </div>
 
+          {(bankAccounts?.length ?? 0) > 0 && (
+            <Select
+              label="Bank Account (optional)"
+              options={[
+                { value: '', label: 'No account' },
+                ...(bankAccounts ?? []).map((a: any) => ({ value: a.id, label: a.name })),
+              ]}
+              {...regEvt('bankAccountId')}
+            />
+          )}
+
           <Input label="Description" placeholder="Optional note for members" {...regEvt('description')} />
 
           <div className="flex gap-2 justify-end pt-2">
