@@ -40,7 +40,11 @@ export default function EventCreatePage() {
       </div>
 
       <div className="card p-6">
-        <form onSubmit={handleSubmit((data) => createMutation.mutate(data))} className="space-y-4">
+        <form onSubmit={handleSubmit((data) => createMutation.mutate({
+          ...data,
+          startTime: data.startTime ? new Date(data.startTime).toISOString() : data.startTime,
+          endTime: data.endTime ? new Date(data.endTime).toISOString() : data.endTime,
+        }))} className="space-y-4">
           <Input label="Event Title" placeholder="e.g. Monthly General Meeting" error={errors.title?.message as string}
             {...register('title', { required: 'Title is required' })} />
 
