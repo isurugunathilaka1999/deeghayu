@@ -313,7 +313,7 @@ export default function TreasurerDashboardPage() {
                       setSelectedOverdue(e.target.checked ? overdueData?.map((p: any) => p.id) || [] : []);
                     }} />
                   </th>
-                  {['Member', 'Type', 'Amount', 'Due Date', 'Status'].map((h) => (
+                  {['Member', 'Type', 'Remaining', 'Due Date', 'Status'].map((h) => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
                   ))}
                 </tr>
@@ -332,7 +332,7 @@ export default function TreasurerDashboardPage() {
                       <p className="text-xs text-slate-400">{p.member?.membershipId}</p>
                     </td>
                     <td className="px-4 py-3 text-slate-500 text-xs">{p.type?.replace(/_/g, ' ')}</td>
-                    <td className="px-4 py-3 font-semibold">{formatCurrency(Number(p.amount))}</td>
+                    <td className="px-4 py-3 font-semibold">{formatCurrency(Number(p.amount) - Number(p.paidAmount))}</td>
                     <td className="px-4 py-3 text-red-500">{p.dueDate ? formatDate(p.dueDate, 'PP') : '—'}</td>
                     <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
                   </tr>
